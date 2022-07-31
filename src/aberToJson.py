@@ -54,6 +54,12 @@ class module:
         return f'(P:{self.part},S:{self.semester}) {self.id}: {self.title}'
 
 
+def validAttr(dict, keyname):
+    if dict.has_attr(keyname) and dict[keyname] != None and dict[keyname] != "" and dict[keyname] != "unknown":
+        return True
+    else:
+        return False
+
 def HTMLToModule(HTMLPath) -> module:
     # Read and process HTMLFile and companion file if present
     html_file = open(HTMLPath, "r", encoding="UTF-8")
@@ -74,16 +80,32 @@ def HTMLToModule(HTMLPath) -> module:
     
     id = os.path.splitext(os.path.basename(HTMLPath))[0]
     title = ""
-    part = data_json["part"]
-    semester = data_json["semester"]
-    academicYear = data_json["year"]
-    url = data_json["oURL"]
-    graduate = data_json["graduateString"]
-    department = data_json["department"]
+    
+
+    part = ""
+    semester = ""
+    academicYear = ""
+    url = ""
+    graduate = ""
+    department = ""
     preRequisite = []
     coRequisite = []
     exclusive = []
 
+    if validAttr(data_json, "semester"):
+        part = data_json["part"]
+
+    if validAttr(data_json, "startyear"):
+        semester = data_json["semester"]
+
+    if validAttr(data_json, "oURL"):
+        url = data_json["oURL"]
+
+    if validAttr(data_json, "graduateString"):
+        graduate = data_json["graduateString"]
+
+    if validAttr(data_json, "department"):
+        department = data_json["department"]
 
 
     soup = BeautifulSoup(html_data, 'html.parser')

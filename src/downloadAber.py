@@ -9,6 +9,8 @@ import re
 import unicodedata
 import datetime
 import json
+
+from aberToJson import module
 def remove_control_characters(s):
     return "".join(ch for ch in s if unicodedata.category(ch)[0]!="C")
 
@@ -23,7 +25,7 @@ class downloadThread(threading.Thread):
     def run(self):
         urllib.request.urlretrieve(self.url, self.outputPath)
 
-indexbasePath = os.path.join(os.getcwd(), "indexfiles")
+
 
 def downloadfile(url,outputPath, newthread=False, ignoreExistingFile=False):
     file_exists = os.path.exists(outputPath)
@@ -36,6 +38,8 @@ def downloadfile(url,outputPath, newthread=False, ignoreExistingFile=False):
         print(f"Download to'{outputPath}'")
     if newthread:
         dwthread = downloadThread(1, f"DL", url, outputPath)
+        while (threading.activeCount() > 100) :
+            pass
         dwthread.start()
     else:
         urllib.request.urlretrieve(url, outputPath)
@@ -61,43 +65,51 @@ def getIdsFromString(text):
     return x
 
 
-def downloadRootDown(rootURL, years=["current", "future"], forseRedownload=False): #NFINISHED
+def downloadRootDown(rootURL, years=["current", "future"], forseReDownload=False): #NFINISHED
     if os.path.exists(indexbasePath) == False:
         os.makedirs(indexbasePath)
     #downloadHTML(rootURL, indexbasePath, "root", ignoreExistingFile=forseRedownload) only needed for random years
 
 
-def downloadYearDown(indexURL="https://www.aber.ac.uk/en/modules",year="current",forseRedownload=False,modjsonDATA={}):
+def downloadYearDown(indexURL="https://www.aber.ac.uk/en/modules",year="current",forseReDownload=False,modjsonDATA={}):
+    if os.path.exists(indexbasePath) == False:
+        os.makedirs(indexbasePath)
+    # Aberystwyth modules website automatically redirects to the correct deptcurrent or deptfuture so no logic needed
     now = datetime.datetime.now()
-    orYear = year
     
+    if year == "current": # Needs some better logic probably
+        year = now.year
+    if year == "future":
+        year = now.year+1
+
+    indexURL += f"/{year}/"
     #Suspected term end date 25/08/2022 Research needed
-    endTermNowYear = datetime.datetime(now.year, 8,25)
-    if year == "current":
-        if now > endTermNowYear:
-            # year is current year/next year *probably
-            year = f"{now.year}-{now.year+1}"
-        else:
-            #year is last year/this year
-            year = f"{now.year-1}-{now.year}"
+    #endTermNowYear = datetime.datetime(now.year, 8,25)
+    #if year == "current":
+    #    if now > endTermNowYear:
+    #        # year is current year/next year *probably
+    #        year = f"{now.year}-{now.year+1}"
+    #    else:
+    #        #year is last year/this year
+    #        year = f"{now.year-1}-{now.year}"
 
-        indexURL += "/deptcurrent/"
-    elif year == "future":
-        if now > endTermNowYear:
-            # year is current year+1/next year+1 *probably
-            year = f"{now.year+1}-{now.year+2}"
-        else:
-            #year is current year/next year
-            year = f"{now.year}-{now.year+1}"
-        indexURL += "/deptfuture/"
+    #    indexURL += "/deptcurrent/"
+    #elif year == "future":
+    #    if now > endTermNowYear:
+    #        # year is current year+1/next year+1 *probably
+    #        year = f"{now.year+1}-{now.year+2}"
+    #    else:
+    #        #year is current year/next year
+    #        year = f"{now.year}-{now.year+1}"
+    #    indexURL += "/deptfuture/"
+    myJSONData = {}
+    myJSONData["startyear"] = year
 
-    modjsonDATA["year"] = year
-
-    yearFolderDir = os.path.join(indexbasePath, year)
+    yearFolderDir = os.path.join(indexbasePath, str(year))
 
     if os.path.exists(yearFolderDir) == False:
         os.makedirs(yearFolderDir)
-    filePATH = downloadHTML(indexURL,yearFolderDir, "deptlist", ignoreExistingFile=forseRedownload)
+    filePATH = downloadHTML(indexURL,yearFolderDir, "deptlist", ignoreExistingFile=forseReDownload)
 
     # interpret file
 
@@ -107,25 +119,49 @@ def downloadYearDown(indexURL="https://www.aber.ac.uk/en/modules",year="current"
 
     soup = BeautifulSoup(doc, 'html.parser')
 
-    deptURLs = [] 
+    #Need to decide if this is an module index file or a department index file
+    indexFileType = "module"
 
-    for link in soup.find_all("a"):
-        href = link.get("href")
-        
-        if (href != None) and (len(re.findall("^[^\/]+\/$",href))):
-            # store urls
-            deptURLs.append(f"{indexURL}/{href}")
+    if indexFileType == "module":
+        #In here I need to inerpret the index file into all modules and pass it to download those modules
+        #I also need to pass as much information as possible to be written
+        #print(soup.prettify())
+        moduleDirPath = os.path.join(yearFolderDir, "modules")
+        if os.path.exists(moduleDirPath) == False:
+            os.makedirs(moduleDirPath)
+        number = 1
+        moduleCodeX25 = soup.find_all(attrs={"class": "module-code-x-25"})
+        for modulecodeparent in moduleCodeX25:
             
-            print(href)
-    
-    deptsPath = os.path.join(yearFolderDir, "depts")
+            id = modulecodeparent.text
+            myJSONData["id"] = id
+            JSONData = {**modjsonDATA, **myJSONData}
+            print(f"{number}/{len(moduleCodeX25)}:",end="")
+            downloadHTML(indexURL + f"{id}/", moduleDirPath, id, newthread=True, ignoreExistingFile=forseReDownload, companionJSONdata=JSONData)
+            number+=1
 
-    if os.path.exists( deptsPath) == False:
-        os.makedirs(deptsPath)
+        
+    elif indexFileType == "department":
 
-    for depturl in deptURLs:
-        downloadDeptDown(depturl,deptsPath, modjsonDATA=modjsonDATA)
-    # call department download for all departments
+        deptURLs = [] 
+
+        for link in soup.find_all("a"):
+            href = link.get("href")
+            
+            if (href != None) and (len(re.findall("^[^\/]+\/$",href))):
+                # store urls
+                deptURLs.append(f"{indexURL}/{href}")
+                
+                print(href)
+        
+        deptsPath = os.path.join(yearFolderDir, "depts")
+
+        if os.path.exists( deptsPath) == False:
+            os.makedirs(deptsPath)
+
+        for depturl in deptURLs:
+            downloadDeptDown(depturl,deptsPath, modjsonDATA=modjsonDATA)
+        # call department download for all departments
     
 def downloadDeptDown(URL, baseDir, forseReDownload=False, modjsonDATA={}):
     # Index Aber Modules
@@ -165,7 +201,7 @@ def downloadDeptDown(URL, baseDir, forseReDownload=False, modjsonDATA={}):
     for link in soup.find_all("a"):
         href = link.get("href")
         #print(href)
-        if (href != None) and (len(getIdsFromString(href)) == 1): #Doesnt take into account SEM modules
+        if (href != None) and (len(getIdsFromString(href)) == 1):
             graduateString = "unknown"
             partSemString = link.parent.parent.parent.previous_element
 
@@ -224,8 +260,29 @@ def downloadDeptDown(URL, baseDir, forseReDownload=False, modjsonDATA={}):
     #    continue
     # all done
 
+#indexbasePath = os.path.join(os.getcwd(), "indexfiles")
+indexbasePath = os.path.join("C:\\Users\\thoma\\Documents\\Real Documents\\Aberystwyth Module Downloads TEST", "indexfiles")
+#C:\Users\thoma\Documents\Real Documents\Aberystwyth Module Downloads TEST
+
+downloadYearDown(year=2021)
+
+def cmdMenu():
+
+    while (1==1):
+        print("0 - Run Year Down")
+        inputtxt = input("?:")
+        if inputtxt == "0":
+            outputDir = input("OutputDir:")
+            global indexbasePath
+            indexbasePath = os.path.join(outputDir, "indexfiles")
+            downloadYearDown(year=2021)
+            print("-------All Done-------")
+
+
+
+cmdMenu()
+    
 
 
 
 
-downloadYearDown()
